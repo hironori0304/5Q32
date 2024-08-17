@@ -17,11 +17,11 @@ def initialize_session_state():
     if 'user_answers' not in st.session_state:
         st.session_state.user_answers = {}
     if 'score' not in st.session_state:
-        st.session_state.score = None  # 初期状態ではスコアは設定しない
+        st.session_state.score = None
     if 'total_questions' not in st.session_state:
         st.session_state.total_questions = 0
     if 'percentage' not in st.session_state:
-        st.session_state.percentage = None  # 初期状態では正解率は設定しない
+        st.session_state.percentage = None
     if 'shuffled_options' not in st.session_state:
         st.session_state.shuffled_options = {}
     if 'selected_years' not in st.session_state:
@@ -38,13 +38,10 @@ if uploaded_file is not None:
     # アップロードされたファイルを読み込む
     df = load_quizzes(uploaded_file)
 
-
-   
     # 年と分類の選択肢を取得し、「すべて」を追加
     years = df['year'].unique().tolist()
     categories = df['category'].unique().tolist()
     
-    # 「すべて」を含む選択肢を作成
     years = ['すべて'] + years
     categories = ['すべて'] + categories
     
@@ -68,31 +65,23 @@ if uploaded_file is not None:
 
     # 年とカテゴリーの選択順に基づいてソート
     if 'year' in filtered_df.columns and 'category' in filtered_df.columns:
-        # 年とカテゴリーの選択順を決定
         category_order = {category: idx for idx, category in enumerate(st.session_state.selected_categories)}
         year_order = {year: idx for idx, year in enumerate(st.session_state.selected_years)}
 
-        # 年とカテゴリーの順序に基づくカスタムソート
         filtered_df['category_order'] = filtered_df['category'].map(category_order).fillna(float('inf'))
         filtered_df['year_order'] = filtered_df['year'].map(year_order).fillna(float('inf'))
 
-        # カテゴリー→年の順序でソート
         filtered_df = filtered_df.sort_values(by=['category_order', 'year_order'])
-
-        # 不要な列を削除
         filtered_df = filtered_df.drop(columns=['category_order', 'year_order'])
 
-    # フィルタリングされた後の問題数を表示
     total_questions = len(filtered_df)
     st.write(f"選択された問題は{total_questions}問あります")
 
-    # 問題のシャッフルされた選択肢と表示
     quizzes = []
     for _, row in filtered_df.iterrows():
         options = [row[f"option{i}"] for i in range(1, 6) if pd.notna(row[f"option{i}"])]
         answers = [row[f"answer{i}"] for i in range(1, 6) if pd.notna(row[f"answer{i}"])]
         
-        # シャッフルされた選択肢をセッション状態に保存
         if row["question"] not in st.session_state.shuffled_options:
             shuffled_options = options[:]
             random.shuffle(shuffled_options)
@@ -106,41 +95,28 @@ if uploaded_file is not None:
         }
         quizzes.append(quiz)
 
-    # クイズの表示とユーザー回答の収集
     for idx, quiz in enumerate(quizzes, start=1):
-        # 問題番号のハイライト
         highlight = 'background-color: #fdd; padding: 10px;' if idx in st.session_state.highlighted_questions else ''
         st.markdown(f'<div style="{highlight}">問題{idx}</div>', unsafe_allow_html=True)
-
-        # 問題文の表示
         st.markdown(f'<div>{quiz["question"]}</div>', unsafe_allow_html=True)
-
-        # CSSで選択肢間隔を調整
         st.markdown(
             """
             <style>
             div[role='radiogroup'] {
-                margin-top: -20px;  /* 問題文と選択肢の間隔を完全に詰める */
+                margin-top: -20px; 
             }
             div[role='radiogroup'] > label {
-                margin-bottom: 10px; /* 選択肢同士の間隔 */
+                margin-bottom: 10px;
             }
             </style>
             """,
             unsafe_allow_html=True
         )
 
-        # 単一選択問題の処理
         if quiz["type"] == "single":
-            user_selection = st.radio(
-                "",  # ラベルなし
-                quiz["options"],
-                key=f"{idx}_radio",
-                index=None  # 初期状態で何も選択されていない
-            )
-            st.session_state.user_answers[quiz["question"]] = user_selection  # 選択された答えをセッションに保存
-
-        # 複数選択問題の処理
+            user_answer = st.session_state.user_answers.get(quiz["question"], None)
+            selected_option = st.radio("", quiz["options"], key=f"{idx}_radio", index=quiz["options"].index(user_answer) if user_answer in quiz["options"] else None)
+            st.session_state.user_answers[quiz["question"]] = selected_option
         elif quiz["type"] == "multiple":
             selected_options = st.session_state.user_answers.get(quiz["question"], [])
             for option in quiz["options"]:
@@ -153,47 +129,44 @@ if uploaded_file is not None:
                         selected_options.remove(option)
             st.session_state.user_answers[quiz["question"]] = selected_options
 
-        # 問題間のスペース
         st.markdown("<br>", unsafe_allow_html=True)
 
-  # 成績を表示するための処理
-if st.session_state.score is not None:
-    st.write(f"成績: {st.session_state.score}/{st.session_state.total_questions} 正解")
-    st.write(f"正解率: {st.session_state.percentage:.2f}%")
+    # 回答ボタンを作成
+    if st.button('回答'):
+        # 成績の計算と間違った問題のリストの更新
+        correct_count = 0
+        total_questions = len(quizzes)
+        highlighted_questions = set()
 
-# 回答ボタンを作成
-if st.button('回答'):
-    correct_count = 0
-    total_questions = len(quizzes)
-    st.session_state.highlighted_questions.clear()  # ハイライトの初期化
+        for idx, quiz in enumerate(quizzes, start=1):
+            if quiz["type"] == "single":
+                user_answer = st.session_state.user_answers.get(quiz["question"], None)
+                is_correct = user_answer == quiz["answers"][0]
+                if not is_correct:
+                    highlighted_questions.add(idx)
+            elif quiz["type"] == "multiple":
+                user_answers_options = set(st.session_state.user_answers.get(quiz["question"], []))
+                correct_answers = set(quiz["answers"])
+                is_correct = user_answers_options == correct_answers
+                if not is_correct:
+                    highlighted_questions.add(idx)
+                else:
+                    correct_count += 1
 
-    # ユーザーの回答と正しい回答の比較
-    for idx, quiz in enumerate(quizzes, start=1):
-        if quiz["type"] == "single":
-            user_answer = st.session_state.user_answers.get(quiz["question"])
-            is_correct = user_answer == quiz["answers"][0]
-            if is_correct:
-                correct_count += 1
-            else:
-                st.session_state.highlighted_questions.add(idx)  # 間違った問題番号をハイライト
-        elif quiz["type"] == "multiple":
-            user_answers_options = set(st.session_state.user_answers.get(quiz["question"], []))
-            correct_answers = set(quiz["answers"])
-            is_correct = user_answers_options == correct_answers
-            if is_correct:
-                correct_count += 1
-            else:
-                st.session_state.highlighted_questions.add(idx)  # 間違った問題番号をハイライト
+        # 現在の間違った問題リストをクリアし、新しい間違った問題のみを登録
+        st.session_state.highlighted_questions = highlighted_questions
+        st.session_state.score = total_questions - len(highlighted_questions)
+        st.session_state.total_questions = total_questions
+        st.session_state.percentage = (st.session_state.score / total_questions) * 100
 
-    # 成績の計算と表示
-    st.session_state.score = correct_count
-    st.session_state.total_questions = total_questions
-    st.session_state.percentage = (correct_count / total_questions) * 100
+        # 成績の表示
+        st.write(f"成績: {st.session_state.score}/{st.session_state.total_questions} 正解")
+        st.write(f"正解率: {st.session_state.percentage:.2f}%")
 
-    st.write(f"成績: {st.session_state.score}/{total_questions} 正解")
-    st.write(f"正解率: {st.session_state.percentage:.2f}%")
-
-        # 再描画を行わない
-    st.rerun()
-        
-        # このプログラムでハイライトと成績と両方が同じタイミングでできるようになった
+    # 不正解問題ボタンを作成
+    if st.button('不正解問題'):
+        # 不正解問題の番号にハイライトをつける
+        for idx, quiz in enumerate(quizzes, start=1):
+            highlight = 'background-color: #fdd; padding: 10px;' if idx in st.session_state.highlighted_questions else ''
+            
+            
